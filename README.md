@@ -1,11 +1,11 @@
-# DEM Processing and SLC Download
+# DSM Processing and SLC Download
 
 This project provides a pipeline for generating Digital Surface Models (DSMs) using Sentinel-1 data and downloading Single Look Complex (SLC) data. It consists of two main scripts: `slc_dl.py` and `dsm.py`.
 
 ## Prerequisites
 
 - **Python Environment**: Ensure you have Python installed and set up with necessary packages.
-- **SNAP (Sentinel Application Platform) Toolbox**: You need to have SNAP installed for running DEM processing. Download it from [SNAP Toolbox](https://step.esa.int/updatecenter/9.0/snap-toolboxes/).
+- **SNAP (Sentinel Application Platform) Toolbox**: You need to have SNAP installed for running DSM processing. Download it from [SNAP Toolbox](https://step.esa.int/updatecenter/9.0/snap-toolboxes/).
 - **SNAPHU**: This tool is necessary for unwrapping interferograms. Follow the installation guide [here](https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/).
 - **STSA**: Install the STSA tool using `pip install git+https://github.com/pbrotoisworo/s1-tops-split-analyzer.git`.
 
@@ -38,7 +38,7 @@ This project provides a pipeline for generating Digital Surface Models (DSMs) us
 - **Download Link**: Access the ASF search platform [here](https://search.asf.alaska.edu).
 - **Configuration**: Ensure your Earthdata credentials are correctly configured in the environment or `.netrc` file.
 
-### `test_dem2.py` - Generating DSM
+### `dsm.py` - Generating DSM
 
 - **Objective**: Process Sentinel-1 data to create DSM.
 - **Configuration**: Adjust script paths to point to your data directories.
