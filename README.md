@@ -16,7 +16,7 @@ This project provides a pipeline for generating Digital Surface Models (DSMs) us
    wget https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.7.tar.gz
    mkdir -p ~/snaphu
    cd ~/snaphu
-   unzip ~/snaphu-v1.4.2_linux.zip
+   tar -xzvf ~/snaphu-v1.4.2_linux.tar.gz
    cd snaphu-v1.4.2_linux/bin
    chmod +x snaphu
    echo 'export PATH=$PATH:~/snaphu/snaphu-v1.4.2_linux/bin' >> ~/.bashrc
