@@ -5,7 +5,7 @@ This project provides a pipeline for generating Digital Surface Models (DSMs) us
 ## Prerequisites
 
 - **Python Environment**: Ensure you have Python installed and set up with necessary packages.
-- **SNAP (Sentinel Application Platform) Toolbox**: You need to have SNAP installed for running DSM processing. Download it from [SNAP Toolbox](https://step.esa.int/updatecenter/9.0/snap-toolboxes/).
+- **SNAP (Sentinel Application Platform) Toolbox**: You need to have SNAP installed for running DSM processing. Download it from [SNAP]([https://step.esa.int/updatecenter/9.0/snap-toolboxes/](https://step.esa.int/main/download/snap-download/)). And Attribute **Snappy** to the Python in your environment.
 - **SNAPHU**: This tool is necessary for unwrapping interferograms. Follow the installation guide [here](https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/).
 - **STSA**: Install the STSA tool using `pip install git+https://github.com/pbrotoisworo/s1-tops-split-analyzer.git`.
 
