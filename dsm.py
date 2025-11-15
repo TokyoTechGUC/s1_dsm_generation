@@ -4,7 +4,7 @@ Sentinel-1 IW2 VV InSAR DEM Pipeline (Snappy)
 Flow (matching your table):
 1 Read  -> 2 Apply-Orbit  -> 3 TOPSAR-Split -> 4 Re-Apply-Orbit ->
 5 Back-Geocoding(Stack) -> 6 ESD(optional) -> 7 Interferogram ->
-8 Goldstein Filtering -> 9 SNAPHU Unwrapping -> 10 Flatten(PhaseToElevation) ->
+8 Goldstein Filtering -> 9 SNAPHU Unwrapping -> 10 Deburst ->
 11 Terrain Correction -> GeoTIFF
 """
 
@@ -17,9 +17,9 @@ import re, tqdm
 
 
 # 保证使用 GUI 的 SNAP_HOME 配置
-os.environ["SNAP_HOME"] = os.path.expanduser("~/.snap")
-os.environ["ESASNAP_HOME"] = os.environ["SNAP_HOME"]
-os.environ["SNAP_AUXDATA_DIR"] = os.path.join(os.environ["SNAP_HOME"], "auxdata")
+#os.environ["SNAP_HOME"] = os.path.expanduser("~/.snap")
+#os.environ["ESASNAP_HOME"] = os.environ["SNAP_HOME"]
+#os.environ["SNAP_AUXDATA_DIR"] = os.path.join(os.environ["SNAP_HOME"], "auxdata")
 
 # 注册所有 SNAP 算子（包括 DEM）
 GPF.getDefaultInstance().getOperatorSpiRegistry().loadOperatorSpis()
@@ -61,8 +61,10 @@ def back_geocoding(logmsg,log,dem,master_split_orb,slave_split_orb):
 
 def topsar_split(logmsg,log,iw,polarization,master,slave):
     p = HashMap()
-    p.put("subswath", iw)
-    p.put("selectedPolarisations", polarization.upper())
+    p.put("subswath", "IW2")
+    p.put("firstBurstIndex", "4")
+    p.put("lastBurstIndex", "7")
+    p.put("selectedPolarisations", "VV")
     master_split = GPF.createProduct("TOPSAR-Split", p, master)
     slave_split  = GPF.createProduct("TOPSAR-Split", p, slave)
     return master_split,slave_split, log
@@ -104,7 +106,7 @@ def run_snaphu(snaphu_dir, logmsg, log):
     snaphu_conf = os.path.join(snaphu_dir, "snaphu.conf")
 
     # 1. 查找 snaphu 可执行路径
-    snaphu_bin = shutil.which("snaphu") or "/home/vickey/snaphu/snaphu-v1.4.2_linux/bin/snaphu"
+    snaphu_bin = shutil.which("snaphu") or "/gs/bs/tga-guc-lab/users/vickey/snaphu/snaphu-v2.0.7/bin/snaphu"
     if not os.path.exists(snaphu_bin):
         raise FileNotFoundError(f"[FATAL] SNAPHU not found at {snaphu_bin}")
 
@@ -240,12 +242,12 @@ def fixed_pipeline(
     p.put("exportUnwPhase", True)
     p.put("exportSnaphuConf", True)     # 部分版本支持显式导出配置
     p.put("tileExtension", True)
-    p.put("tileRows", Integer(8))     # Tile 行数
-    p.put("tileCols", Integer(8))     # Tile 列数
-    p.put("rowOverlap", Integer(200))
-    p.put("colOverlap", Integer(200))
+    p.put("tileRows", Integer(16))     # Tile 行数
+    p.put("tileCols", Integer(16))     # Tile 列数
+    p.put("rowOverlap", Integer(400))
+    p.put("colOverlap", Integer(400))
     p.put("tileCostThreshold", Integer(500))  # 部分版本支持，会写入 conf 中
-    p.put("numberOfProcessors", Integer(10))
+    p.put("numberOfProcessors", Integer(8))
 
     snaphu_exp = GPF.createProduct("SnaphuExport", p, flt)
     ProductIO.writeProduct(snaphu_exp, snaphu_dir, "Snaphu")
@@ -265,32 +267,63 @@ def fixed_pipeline(
 
     p = HashMap()
     p.put("snaphuImportFile", unw_hdr)
-    p.put("unwrapBandName", "Unw_Phase_ifg")
-    unw = GPF.createProduct("SnaphuImport", p, [flt, ProductIO.readProduct(unw_hdr)])
+    p.put("unwrapBandName", "VV")
+    unw = GPF.createProduct("SnaphuImport", p, [ProductIO.readProduct(unw_hdr),flt])
     # ProductIO.writeProduct(unw, os.path.join(output_dir, "ifg_unw"), "BEAM-DIMAP")
     logmsg(log, "INFO", "Step 9 done: unwrap imported.")
 
-    # 🔟 Flatten / PhaseToElevation（将相位转高程）
-    # PhaseToElevation（内部会使用 DEM/轨道信息）
-    p = HashMap()
-    logmsg(log, "INFO", "Step 10: PhaseToElevation...")
-    flatten = GPF.createProduct("PhaseToElevation", p, unw)
-    # ProductIO.writeProduct(flatten, os.path.join(output_dir, "ifg_flatten"), "BEAM-DIMAP")
-    logmsg(log, "INFO", "Step 10 done: flattening complete.")
-    print(flatten.getBandNames())
-    print(flatten.getMetadataRoot().toString())
-
+    # 🔟 Deburst（拼接 burst）
+    # 将每个子波束中的 burst 片段拼接为连续条带，用于后续干涉处理
+    p = HashMap()  # Deburst 无需额外参数
+    logmsg(log, "INFO", "Step 10: TOPSAR Deburst...")
+    deburst = GPF.createProduct("TOPSAR-Deburst", p, unw)
+    # ProductIO.writeProduct(deburst, os.path.join(output_dir, "ifg_deburst"), "BEAM-DIMAP")
+    logmsg(log, "INFO", "Step 10 done: deburst complete.")
+    print(deburst.getBandNames())
+    print(deburst.getMetadataRoot().toString())
 
     # 11️⃣ Terrain Correction（投影到地理坐标并输出 DEM）
     p = HashMap()
-    p.put('demName', "SRTM 3Sec")
-    p.put("mapProjection", "WGS84(DD)")
-    p.put("pixelSpacingInMeter", 30.0)
-    p.put("resamplingMethod", "BILINEAR_INTERPOLATION")
-    p.put('externalDEMApplyEGM', True)
-    p.put('nodataValueAtSea', True)
+    p.put('demName', "SRTM 1Sec HGT")
+    p.put('externalDEMNoDataValue', 0.0)                        # <externalDEMNoDataValue>
+    p.put('externalDEMApplyEGM', True)                           # <externalDEMApplyEGM>
+    p.put('demResamplingMethod', 'BILINEAR_INTERPOLATION')       # <demResamplingMethod>
+    p.put('imgResamplingMethod', 'BILINEAR_INTERPOLATION')       # <imgResamplingMethod>
+    p.put('pixelSpacingInMeter', 10.0)                           # <pixelSpacingInMeter>
+    p.put('pixelSpacingInDegree', 8.983152841195215E-5)          # <pixelSpacingInDegree>
+    p.put('mapProjection', (
+        'GEOGCS["WGS84(DD)", '
+        'DATUM["WGS84", SPHEROID["WGS84",6378137.0,298.257223563]], '
+        'PRIMEM["Greenwich",0.0], UNIT["degree",0.017453292519943295], '
+        'AXIS["Geodetic longitude",EAST], AXIS["Geodetic latitude",NORTH], '
+        'AUTHORITY["EPSG","4326"]]'
+    ))
+    p.put('alignToStandardGrid', False)                          # <alignToStandardGrid>
+    p.put('standardGridOriginX', 0.0)                            # <standardGridOriginX>
+    p.put('standardGridOriginY', 0.0)                            # <standardGridOriginY>
+    p.put('nodataValueAtSea', True)                              # <nodataValueAtSea>
+
+    # === 输出控制，与 XML 布尔字段完全对应 ===
+    p.put('saveDEM', True)
+    p.put('saveLatLon', False)
+    p.put('saveIncidenceAngleFromEllipsoid', False)
+    p.put('saveLocalIncidenceAngle', False)
+    p.put('saveProjectedLocalIncidenceAngle', False)
+    p.put('saveSelectedSourceBand', True)
+    p.put('saveLayoverShadowMask', False)
+    p.put('outputComplex', False)
+    p.put('applyRadiometricNormalization', False)
+    p.put('saveSigmaNought', False)
+    p.put('saveGammaNought', False)
+    p.put('saveBetaNought', False)
+
+    p.put('incidenceAngleForSigma0', 'Use projected local incidence angle from DEM')
+    p.put('incidenceAngleForGamma0', 'Use projected local incidence angle from DEM')
+    p.put('auxFile', 'Latest Auxiliary File')
+
     logmsg(log, "INFO", "Step 11: Terrain-Correction & export GeoTIFF...")
-    tc = GPF.createProduct("Terrain-Correction", p, flatten)
+    tc = GPF.createProduct("Terrain-Correction", p, deburst)
+    ProductIO.writeProduct(tc, os.path.join(output_dir, "ifg_deb_TC"), "BEAM-DIMAP");
     ProductIO.writeProduct(tc, os.path.join(output_dir, "DEM_output"), "GeoTIFF-BigTIFF")
     logmsg(log, "INFO", "Step 11 done: terrain correction complete. DEM exported.")
 
@@ -306,11 +339,14 @@ def fixed_pipeline(
 # ---------------------- main ----------------------
 if __name__ == "__main__":
     # 按你的实际路径修改
-    # master_zip = "/work/vickey/DEM/data/S1A_IW_SLC__1SDV_20170910T204309_20170910T204337_018318_01ED12_DA0E.zip"
-    master_zip = "/work/vickey/DEM/data/S1B_IW_SLC__1SDV_20201006T084141_20201006T084208_023690_02D038_B36B.zip"
-    # slave_zip  = "/work/vickey/DEM/data/S1A_IW_SLC__1SDV_20170922T204310_20170922T204338_018493_01F271_2678.zip"
-    slave_zip = "/work/vickey/DEM/data/S1A_IW_SLC__1SDV_20201012T084204_20201012T084231_034761_040CDF_4027.zip"
-    output_dir = "/work/vickey/DEM/output3"
+    #master_zip = "./data/S1A_IW_SLC__1SDV_20170910T204309_20170910T204337_018318_01ED12_DA0E.zip"
+    #master_zip = "./data/S1B_IW_SLC__1SDV_20201006T084141_20201006T084208_023690_02D038_B36B.zip"
+    #slave_zip  = "./data/S1A_IW_SLC__1SDV_20170922T204310_20170922T204338_018493_01F271_2678.zip"
+    #slave_zip = "./data/S1A_IW_SLC__1SDV_20201012T084204_20201012T084231_034761_040CDF_4027.zip"
+    
+    master_zip = "./data/S1B_IW_SLC__1SDV_20201217T084140_20201217T084207_024740_02F148_C219.zip"
+    slave_zip  = "./data/S1B_IW_SLC__1SDV_20201205T084141_20201205T084207_024565_02EB9A_B623.zip"
+    output_dir = "./output3"
 
     # 固定 IW2 + VV；DEM 与 GUI 一致
     try:
