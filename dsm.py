@@ -6,14 +6,18 @@ Flow (matching your table):
 5 Back-Geocoding(Stack) -> 6 ESD(optional) -> 7 Interferogram ->
 8 Goldstein Filtering -> 9 SNAPHU Unwrapping -> 10 Deburst ->
 11 Terrain Correction -> GeoTIFF
-"""
 
+Usage:
+python test_dem2.py --master_zip ./data/S1B_IW_SLC__1SDV_20201217T084140_20201217T084207_024740_02F148_C219.zip --slave_zip ./data/S1B_IW_SLC__1SDV_20201205T084141_20201205T0
+84207_024565_02EB9A_B623.zip --output_dir ./output3 --iw IW2
+"""
 import  os, glob, subprocess, datetime, sys
 import esa_snappy as snappy
 from esa_snappy import ProductIO, GPF, jpy
 import shutil
 import subprocess
 import re, tqdm
+import argparse
 
 
 # 保证使用 GUI 的 SNAP_HOME 配置
@@ -242,10 +246,10 @@ def fixed_pipeline(
     p.put("exportUnwPhase", True)
     p.put("exportSnaphuConf", True)     # 部分版本支持显式导出配置
     p.put("tileExtension", True)
-    p.put("tileRows", Integer(16))     # Tile 行数
-    p.put("tileCols", Integer(16))     # Tile 列数
-    p.put("rowOverlap", Integer(400))
-    p.put("colOverlap", Integer(400))
+    p.put("ntilerow", Integer(16))     # Tile 行数
+    p.put("ntilecol", Integer(16))     # Tile 列数
+    p.put("rowovrlp", Integer(400))
+    p.put("colovrlp", Integer(400))
     p.put("tileCostThreshold", Integer(500))  # 部分版本支持，会写入 conf 中
     p.put("numberOfProcessors", Integer(8))
 
@@ -337,24 +341,27 @@ def fixed_pipeline(
 
 
 # ---------------------- main ----------------------
-if __name__ == "__main__":
-    # 按你的实际路径修改
-    #master_zip = "./data/S1A_IW_SLC__1SDV_20170910T204309_20170910T204337_018318_01ED12_DA0E.zip"
-    #master_zip = "./data/S1B_IW_SLC__1SDV_20201006T084141_20201006T084208_023690_02D038_B36B.zip"
-    #slave_zip  = "./data/S1A_IW_SLC__1SDV_20170922T204310_20170922T204338_018493_01F271_2678.zip"
-    #slave_zip = "./data/S1A_IW_SLC__1SDV_20201012T084204_20201012T084231_034761_040CDF_4027.zip"
-    
-    master_zip = "./data/S1B_IW_SLC__1SDV_20201217T084140_20201217T084207_024740_02F148_C219.zip"
-    slave_zip  = "./data/S1B_IW_SLC__1SDV_20201205T084141_20201205T084207_024565_02EB9A_B623.zip"
-    output_dir = "./output3"
+def parse_args():
+    parser = argparse.ArgumentParser(description="Sentinel-1 IW2 VV InSAR DEM Pipeline")
+    parser.add_argument('--master_zip', type=str, required=True, help='Path to the master zip file')
+    parser.add_argument('--slave_zip', type=str, required=True, help='Path to the slave zip file')
+    parser.add_argument('--output_dir', type=str, required=True, help='Output directory')
+    parser.add_argument('--iw', type=str, choices=['IW1', 'IW2', 'IW3'], default='IW2', help='IW selection: IW1, IW2, or IW3')
+    return parser.parse_args()
 
-    # 固定 IW2 + VV；DEM 与 GUI 一致
+if __name__ == "__main__":
+    args = parse_args()
+    master_zip = args.master_zip
+    slave_zip = args.slave_zip
+    output_dir = args.output_dir
+    iw = args.iw
+    
     try:
         fixed_pipeline(
             master_zip=master_zip,
             slave_zip=slave_zip,
             output_dir=output_dir,
-            iw="IW2",
+            iw=iw,
             polarization="VV",
             dem="SRTM 1Sec HGT"
         )
